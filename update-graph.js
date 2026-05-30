@@ -26,7 +26,9 @@ function makeId(title) {
 }
 
 async function main() {
-  const response = await notion.databases.query({
+  const client = new Client({ auth: process.env.NOTION_TOKEN });
+  
+  const response = await client.databases.query({
     database_id: DB_ID,
     sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
     page_size: 20,
