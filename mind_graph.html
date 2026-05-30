@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자기관리 내면 — 신경망 그래프</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background: #0f1117; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
+canvas { display: block; }
+#tooltip {
+  position: fixed;
+  background: rgba(20,22,30,0.96);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #e0e0e0;
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 220px;
+  pointer-events: none;
+  display: none;
+  z-index: 100;
+}
+#tooltip .tt-title { font-size: 13px; font-weight: 500; color: #fff; margin-bottom: 4px; }
+#tooltip .tt-body { color: #aaa; }
+#legend {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  background: rgba(20,22,30,0.9);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: #aaa;
+  font-size: 11px;
+  line-height: 1.9;
+}
+#legend .dot {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+#hint {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,0.25);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="tooltip"><div class="tt-title"></div><div class="tt-body"></div></div>
+<div id="legend">
+  <div><span class="dot" style="background:#4a7aab"></span>경험 · 회상</div>
+  <div><span class="dot" style="background:#b05a5a"></span>트라우마 · 감정</div>
+  <div><span class="dot" style="background:#7a5aab"></span>가치관 · 철학</div>
+  <div><span class="dot" style="background:#5a8a5a"></span>성장 · 극복</div>
+  <div><span class="dot" style="background:#c8a040"></span>브랜딩 · 표현</div>
+  <div><span class="dot" style="background:#888"></span>세부 개념</div>
+</div>
+<div id="hint">노드에 마우스를 올리면 내용을 확인할 수 있어요 · 드래그로 이동</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+let W = window.innerWidth, H = window.innerHeight;
+canvas.width = W; canvas.height = H;
+
+const COLORS = {
+  exp:    '#4a7aab',
+  trauma: '#b05a5a',
+  value:  '#7a5aab',
+  growth: '#5a8a5a',
+  brand:  '#c8a040',
+  sub:    '#555566',
+  core:   '#2a3f6f'
+};
+
+const nodes = [
+  // 핵심 중심
+  { id:'core', label:'자기 인식', x:W/2, y:H/2, r:28, color:COLORS.core, fixed:true,
+    desc:'끊임없이 스스로를 해석하려는 사람. 감정을 느끼는 것에서 끝나지 않고 왜 그런 감정을 느끼는지, 어디서 시작되었는지를 계속 들여다봄.' },
+
+  // 2차 — 경험
+  { id:'exp', label:'회상 · 경험', x:W/2-180, y:H/2-150, r:20, color:COLORS.exp,
+    desc:'모든 결과는 경험에서 시작된다. 경험이 현재의 반응 방식과 사고를 형성함.' },
+  { id:'mj', label:'마이클잭슨 영화', x:W/2-310, y:H/2-230, r:13, color:COLORS.exp,
+    desc:'영화를 보는 2시간 17분 동안 울었다. 가족 안의 긴장, 감정 압박, 구조를 벗어나려는 부분에서 자신과 무의식적으로 연결됨.' },
+  { id:'mongol', label:'몽골 음식 경험', x:W/2-390, y:H/2-130, r:11, color:COLORS.exp,
+    desc:'처음 접한 몽골 음식에서 그 나라의 기후와 문화까지 함께 떠올림. 다른 나라 음식에서 환경까지 연결한 드문 경험.' },
+  { id:'ultra', label:'울트라 백화점 전시', x:W/2-380, y:H/2-50, r:11, color:COLORS.exp,
+    desc:'정보 과도화 시대. 별 볼일 없는 정보도 눈을 사로잡는 키워드 한 줄로 그 사람의 시간을 살 수 있다.' },
+  { id:'may_diary', label:'5월 일기 정리', x:W/2-270, y:H/2-290, r:12, color:COLORS.exp,
+    desc:'생각보다 많은 생각들을 가지고 살아가더라. 취업 장벽에 막혀 멈춰 있다 느꼈지만 나의 시간은 흐르고 있었다.' },
+
+  // 2차 — 트라우마
+  { id:'trauma', label:'트라우마', x:W/2, y:H/2-200, r:20, color:COLORS.trauma,
+    desc:'어린 시절 반복된 갈등과 공포가 과각성 상태로 남아있음. 큰소리=위험, 갈등=즉시 대응으로 신경계가 학습됨.' },
+  { id:'child', label:'어린 시절 기억', x:W/2-120, y:H/2-320, r:13, color:COLORS.trauma,
+    desc:'아버지의 감정 조절 실패, 부모의 갈등을 중재하며 동생을 보호하려 한 경험. 몸과 신경계에 긴장이 누적됨.' },
+  { id:'noise', label:'큰소리 과민반응', x:W/2+80, y:H/2-330, r:12, color:COLORS.trauma,
+    desc:'자다가 소리가 들리면 무의식적으로 넓은 공간으로 뛰어나감. 강아지 짖는 소리에 강한 스트레스. 과거 학습된 경계 반응.' },
+  { id:'mirror', label:'거울 회피', x:W/2+180, y:H/2-240, r:12, color:COLORS.trauma,
+    desc:'약 1~2년 동안 거울 속 자신의 눈을 제대로 바라보지 못함. 과거 아버지에게 느꼈던 위험 신호를 자기 자신에게서 감지.' },
+  { id:'dad', label:'아버지와 닮음', x:W/2+60, y:H/2-270, r:11, color:COLORS.trauma,
+    desc:'아버지를 사랑하고 이해하고 싶었으면서, 닮고 싶지 않았고, 동시에 닮아가고 있다는 두려움.' },
+
+  // 2차 — 가치관
+  { id:'value', label:'가치관 · 철학', x:W/2-200, y:H/2+120, r:20, color:COLORS.value,
+    desc:'인생은 상대적이다. 단단한 가치관이 굳어지는 것을 경계하며 항상 의심하고 디벨롭하는 과정을 거침.' },
+  { id:'bread', label:'선의의 역설', x:W/2-330, y:H/2+80, r:13, color:COLORS.value,
+    desc:'빵을 먼저 쟁취한 뒤 스스로의 선택으로 절반을 나눔. 이익을 챙기면서 친절을 베풀 수 있는 방식은 존재한다.' },
+  { id:'moral', label:'도덕적 우월감', x:W/2-370, y:H/2+170, r:12, color:COLORS.value,
+    desc:'본인의 같잖은 도덕적 우월감으로 남을 희생시키지 말 것. 도덕적 우월감은 노력 없이 얻을 수 있는 유일한 우월감.' },
+  { id:'relative', label:'인생은 상대적', x:W/2-280, y:H/2+210, r:13, color:COLORS.value,
+    desc:'서로 다른 삶을 살아온 이상 각자의 결론에는 나름의 이유와 맥락이 존재. 선과 악, 정답과 오답으로 나눌 수 없는 존재.' },
+  { id:'word', label:'단어로 압축된 사람', x:W/2-150, y:H/2+250, r:12, color:COLORS.value,
+    desc:'사람을 하나의 단어(MBTI, 나르시시스트 등)로 정의하는 것을 싫어함. 한 인간의 복잡한 맥락과 개별성을 지워버리는 기준.' },
+  { id:'result', label:'결과론적 사고', x:W/2-380, y:H/2+90, r:10, color:COLORS.value,
+    desc:'과정을 고려하지 않고 결과에 대해서만 판단하는 사고방식에 대한 경계.' },
+
+  // 2차 — 성장
+  { id:'growth', label:'변화 · 성장', x:W/2+200, y:H/2+80, r:20, color:COLORS.growth,
+    desc:'인간은 변화할 수 있다는 것에 한 표를 던짐. 단단함보다 유연한 갑옷을 만들어야 한다.' },
+  { id:'lobster', label:'가재의 탈피', x:W/2+340, y:H/2+40, r:13, color:COLORS.growth,
+    desc:'가재는 탈피를 통해 성장하지만, 껍질을 벗지 못하면 짓눌려 죽음. 결핍과 상처로부터 보호하려 만든 자아가 오히려 억압.' },
+  { id:'flint', label:'유연한 갑옷', x:W/2+370, y:H/2+130, r:12, color:COLORS.growth,
+    desc:'뗀석기처럼 약간의 유연성을 가진 암석이 충격을 흡수하며 더 오래 형태를 유지함. 나와 소중한 것을 지키는 유연한 껍질.' },
+  { id:'driver', label:'운전자는 멀미 없음', x:W/2+290, y:H/2+190, r:12, color:COLORS.growth,
+    desc:'자신이 어디로 가는지 아는 운전자는 멀미가 나지 않는다. 목표와 현재 위치를 알기에 마음이 준비됨.' },
+  { id:'deficiency', label:'결핍 극복', x:W/2+200, y:H/2+230, r:13, color:COLORS.growth,
+    desc:'결핍 위에 세워진 나는 점점 비관적이 되었고 몸까지 잠식당함. 결핍을 이용한 성장이 아닌, 결핍을 마주하고 이기는 방향으로.' },
+  { id:'hospital', label:'응급실 경험', x:W/2+100, y:H/2+300, r:11, color:COLORS.growth,
+    desc:'횡문근 융해증, 빈혈, 혈소판 감소 진단. 아플 때 치료를 바로 받을 수 있는 것도 행운임을 잊지 말아야 한다.' },
+
+  // 2차 — 브랜딩
+  { id:'brand', label:'브랜딩 · 표현', x:W/2+50, y:H/2+200, r:18, color:COLORS.brand,
+    desc:'사람이 필요로 하는 흐름 위에 자리 잡는 것이 중요. 창작물과 나를 분리하는 객관적 시선.' },
+  { id:'giftcode', label:'기프트코드 시스템', x:W/2+180, y:H/2+330, r:12, color:COLORS.brand,
+    desc:'타겟 유저에게 필요한 정보를 제공하고 모아두는 환경 조성 후, 그들과 함께 이득을 취할 수 있는 시스템.' },
+  { id:'reels', label:'릴스→캐러셀 트렌드', x:W/2-50, y:H/2+340, r:11, color:COLORS.brand,
+    desc:'동영상 피로감과 비직관적 정보력으로 인해 잘 정리된 이미지 포스팅(캐러셀)의 시대가 오고 있음.' },
+  { id:'creation', label:'창작물과 나의 분리', x:W/2+50, y:H/2+370, r:12, color:COLORS.brand,
+    desc:'창작물이 자기 자신과 너무 가까워질 때 방어 반응이 생김. 결과물에 대한 비판이 내 존재의 부정이 아님을 인식해야 함.' },
+  { id:'present', label:'발표 경험', x:W/2-80, y:H/2+260, r:13, color:COLORS.brand,
+    desc:'총장·교수님 초청 캡스톤 발표. 강한 인상을 남기는 에너지도 중요하지만 상대가 받아들일 수 있는 형태로 변환하는 과정의 필요성.' },
+
+  // 소형 연결 개념
+  { id:'prepare', label:'준비 후 실행', x:W/2-130, y:H/2-60, r:10, color:COLORS.sub,
+    desc:'준비가 이루어지지 않으면 쉽게 행동하지 않음. 준비가 되었을 때 겁을 내지 않고 실행. 하나의 근본적 이해 없이 다음 단계로 못 넘어감.' },
+  { id:'see', label:'뭐 눈엔 뭐만 보인다', x:W/2+130, y:H/2-60, r:10, color:COLORS.sub,
+    desc:'한 분야를 오래 고민한 사람은 그 분야를 쉽게 설명함. 자신을 오래 들여다본 사람은 쉽게 단정 짓지 않음.' },
+  { id:'understand', label:'이해 vs 존중', x:W/2+300, y:H/2-30, r:10, color:COLORS.sub,
+    desc:'꼭 타인을 이해해야 하는가? 타인의 생각을 이해가 아닌 존중해준다면, 더 깊게 들어갈 필요가 없지 않을까.' },
+  { id:'content', label:'콘텐츠 이분법', x:W/2-90, y:H/2+170, r:10, color:COLORS.sub,
+    desc:'이분법적 사고를 좋아하지 않지만 콘텐츠 시장에서는 필수적. 타겟층의 수치와 수요를 맞추는 것에 이분법적 사고가 필요.' },
+];
+
+const edges = [
+  // 핵심 → 2차
+  ['core','exp',1.5,'#4a7aab'], ['core','trauma',1.5,'#b05a5a'],
+  ['core','value',1.5,'#7a5aab'], ['core','growth',1.5,'#5a8a5a'],
+  ['core','brand',1.2,'#c8a040'],
+
+  // 경험 하위
+  ['exp','mj',1,'#4a7aab'], ['exp','mongol',0.8,'#4a7aab'],
+  ['exp','ultra',0.8,'#4a7aab'], ['exp','may_diary',1,'#4a7aab'],
+
+  // 트라우마 하위
+  ['trauma','child',1,'#b05a5a'], ['trauma','noise',1,'#b05a5a'],
+  ['trauma','mirror',1,'#b05a5a'], ['trauma','dad',0.8,'#b05a5a'],
+  ['child','noise',0.6,'#884444'], ['dad','mirror',0.6,'#884444'],
+
+  // 가치관 하위
+  ['value','bread',1,'#7a5aab'], ['value','moral',0.8,'#7a5aab'],
+  ['value','relative',1,'#7a5aab'], ['value','word',0.8,'#7a5aab'],
+  ['value','result',0.6,'#7a5aab'],
+  ['bread','moral',0.6,'#553388'],
+
+  // 성장 하위
+  ['growth','lobster',1,'#5a8a5a'], ['growth','flint',0.9,'#5a8a5a'],
+  ['growth','driver',0.8,'#5a8a5a'], ['growth','deficiency',1,'#5a8a5a'],
+  ['growth','hospital',0.7,'#5a8a5a'],
+  ['lobster','flint',0.7,'#336633'],
+
+  // 브랜딩 하위
+  ['brand','giftcode',0.9,'#c8a040'], ['brand','reels',0.8,'#c8a040'],
+  ['brand','creation',1,'#c8a040'], ['brand','present',1,'#c8a040'],
+
+  // 소형
+  ['core','prepare',0.7,'#666'], ['core','see',0.7,'#666'],
+  ['core','understand',0.6,'#666'], ['value','content',0.6,'#666'],
+
+  // 교차 연결 (핵심 테마 간)
+  ['exp','trauma',0.8,'#886688'], ['trauma','growth',0.8,'#886688'],
+  ['mj','child',0.7,'#885555'], ['mj','trauma',0.6,'#885555'],
+  ['present','brand',0.8,'#aa8844'], ['present','value',0.7,'#888844'],
+  ['dad','growth',0.6,'#668866'], ['deficiency','creation',0.7,'#668888'],
+  ['may_diary','core',0.7,'#5577aa'], ['relative','word',0.6,'#664488'],
+  ['driver','prepare',0.5,'#555577'], ['see','understand',0.5,'#555577'],
+  ['hospital','deficiency',0.6,'#557755'], ['content','reels',0.5,'#887733'],
+];
+
+// 노드 맵
+const nodeMap = {};
+nodes.forEach(n => { nodeMap[n.id] = n; });
+
+// 물리 시뮬레이션 초기화
+nodes.forEach(n => {
+  if (!n.fixed) {
+    n.vx = (Math.random()-0.5)*2;
+    n.vy = (Math.random()-0.5)*2;
+  }
+});
+
+let drag = null, mouseX = 0, mouseY = 0, hoveredNode = null;
+let offsetX = 0, offsetY = 0;
+
+function dist(a, b) {
+  return Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2);
+}
+
+function simulate() {
+  const k = 80, repulsion = 6000, damping = 0.85;
+  nodes.forEach(n => {
+    if (n.fixed || n === drag) return;
+    let fx = 0, fy = 0;
+
+    // Repulsion
+    nodes.forEach(m => {
+      if (m === n) return;
+      const dx = n.x - m.x, dy = n.y - m.y;
+      const d = Math.max(dist(n, m), 1);
+      const f = repulsion / (d * d);
+      fx += dx/d * f; fy += dy/d * f;
+    });
+
+    // Spring (edges)
+    edges.forEach(([a, b]) => {
+      if (a !== n.id && b !== n.id) return;
+      const other = nodeMap[a === n.id ? b : a];
+      const dx = other.x - n.x, dy = other.y - n.y;
+      const d = Math.max(dist(n, other), 1);
+      const natural = (n.r + other.r) * 3.5;
+      const f = (d - natural) * 0.035;
+      fx += dx/d * f; fy += dy/d * f;
+    });
+
+    // Center gravity
+    fx += (W/2 - n.x) * 0.002;
+    fy += (H/2 - n.y) * 0.002;
+
+    // Boundary
+    const pad = n.r + 20;
+    if (n.x < pad) fx += (pad - n.x) * 0.3;
+    if (n.x > W - pad) fx += (W - pad - n.x) * 0.3;
+    if (n.y < pad) fy += (pad - n.y) * 0.3;
+    if (n.y > H - pad) fy += (H - pad - n.y) * 0.3;
+
+    n.vx = (n.vx + fx) * damping;
+    n.vy = (n.vy + fy) * damping;
+    n.x += n.vx; n.y += n.vy;
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0f1117';
+  ctx.fillRect(0, 0, W, H);
+
+  // Edges
+  edges.forEach(([a, b, w, color]) => {
+    const na = nodeMap[a], nb = nodeMap[b];
+    if (!na || !nb) return;
+    const isHovered = hoveredNode && (hoveredNode.id === a || hoveredNode.id === b);
+    ctx.beginPath();
+    ctx.moveTo(na.x, na.y);
+    ctx.lineTo(nb.x, nb.y);
+    ctx.strokeStyle = isHovered ? color.replace(')', ',0.9)').replace('rgb','rgba') : color + '55';
+    ctx.lineWidth = isHovered ? w * 1.8 : w * 0.7;
+    ctx.stroke();
+  });
+
+  // Nodes
+  nodes.forEach(n => {
+    const isHov = hoveredNode === n;
+    const glow = isHov ? 18 : 0;
+
+    if (isHov) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r + glow, 0, Math.PI*2);
+      const g = ctx.createRadialGradient(n.x, n.y, n.r, n.x, n.y, n.r + glow);
+      g.addColorStop(0, n.color + '44');
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.r, 0, Math.PI*2);
+    ctx.fillStyle = isHov ? n.color : n.color + 'cc';
+    ctx.fill();
+    ctx.strokeStyle = isHov ? '#fff' : n.color + '88';
+    ctx.lineWidth = isHov ? 1.5 : 0.6;
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = `${n.r > 15 ? 12 : 10}px 'Noto Sans KR', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const words = n.label.split(' · ');
+    if (words.length > 1 && n.r > 13) {
+      ctx.fillText(words[0], n.x, n.y - 6);
+      ctx.fillText(words[1], n.x, n.y + 7);
+    } else {
+      ctx.fillText(n.label, n.x, n.y);
+    }
+  });
+}
+
+function getNode(x, y) {
+  return nodes.find(n => dist(n, {x, y}) <= n.r + 4) || null;
+}
+
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  if (drag) {
+    drag.x = e.clientX + offsetX;
+    drag.y = e.clientY + offsetY;
+    return;
+  }
+  const n = getNode(e.clientX, e.clientY);
+  hoveredNode = n;
+  if (n) {
+    canvas.style.cursor = 'pointer';
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 16) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    tooltip.querySelector('.tt-title').textContent = n.label;
+    tooltip.querySelector('.tt-body').textContent = n.desc;
+  } else {
+    canvas.style.cursor = 'default';
+    tooltip.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  const n = getNode(e.clientX, e.clientY);
+  if (n) { drag = n; offsetX = n.x - e.clientX; offsetY = n.y - e.clientY; }
+});
+
+canvas.addEventListener('mouseup', () => { drag = null; });
+canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; hoveredNode = null; });
+
+window.addEventListener('resize', () => {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  nodeMap['core'].x = W/2; nodeMap['core'].y = H/2;
+});
+
+function loop() {
+  simulate();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
