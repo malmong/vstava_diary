@@ -78,4 +78,7 @@ async function main() {
   console.log(`노드 ${filteredNodes.length}개 추가 완료`);
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
